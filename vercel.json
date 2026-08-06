@@ -1,1 +1,37 @@
-{"version":2,"builds":[{"src":"api-latest.js","use":"@vercel/node"},{"src":"**/*","use":"@vercel/static"}],"routes":[{"src":"/api/latest","dest":"/api-latest.js"},{"handle":"filesystem"},{"src":"/(.*)","dest":"/index.html"}],"headers":[{"source":"/(.*)","headers":[{"key":"Cache-Control","value":"no-store, max-age=0"}]}]}
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api-latest.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "**/*",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/latest",
+      "dest": "/api-latest.js"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, max-age=0"
+        }
+      ]
+    }
+  ]
+}

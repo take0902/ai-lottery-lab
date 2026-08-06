@@ -1,0 +1,4 @@
+Loto6 history: 105 draws (2020-2124)
+Loto7 history: 685 draws (1-685)
+No unverified draw 2126 bundled: OK
+All UI version labels: 4.0.0

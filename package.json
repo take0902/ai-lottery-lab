@@ -1,8 +1,5 @@
 {
-  "name": "ai-lottery-lab",
-  "version": "3.0.1",
-  "private": true,
-  "engines": {
-    "node": ">=20"
-  }
+  "name": "ai-lottery-lab-professional",
+  "version": "4.0.0",
+  "private": true
 }
