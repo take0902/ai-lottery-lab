@@ -1,14 +1,55 @@
 "use strict";
-const VERSION="4.0.0",CFG={loto6:{name:"ロト6",max:43,pick:6,bonus:1,file:"loto6-history.json"},loto7:{name:"ロト7",max:37,pick:7,bonus:2,file:"loto7-history.json"}};
+const VERSION="5.0.0",CFG={loto6:{name:"ロト6",max:43,pick:6,bonus:1,file:"loto6-history.json"},loto7:{name:"ロト7",max:37,pick:7,bonus:2,file:"loto7-history.json"}};
 let game="loto6",history={loto6:[],loto7:[]},latest={loto6:null,loto7:null},predictions={loto6:null,loto7:null};
-const store=JSON.parse(localStorage.getItem("aiLotteryPro4")||'{"purchases":{"loto6":[],"loto7":[]},"reports":{"loto6":[],"loto7":[]},"manual":{}}');
+const EMPTY_STORE={purchases:{loto6:[],loto7:[]},reports:{loto6:[],loto7:[]},manual:{}};
+let store;
+try{
+  store=JSON.parse(localStorage.getItem("aiLotteryPro5")||localStorage.getItem("aiLotteryPro4")||JSON.stringify(EMPTY_STORE));
+}catch{store=structuredClone?structuredClone(EMPTY_STORE):JSON.parse(JSON.stringify(EMPTY_STORE));}
+store.purchases ||= {loto6:[],loto7:[]}; store.reports ||= {loto6:[],loto7:[]}; store.manual ||= {};
+store.purchases.loto6 ||= []; store.purchases.loto7 ||= []; store.reports.loto6 ||= []; store.reports.loto7 ||= [];
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)], C=()=>CFG[game], H=()=>history[game], L=()=>latest[game];
-function save(){localStorage.setItem("aiLotteryPro4",JSON.stringify(store))}function fmt(n){return String(n).padStart(2,"0")}function uniq(a){return [...new Set(a)]}function sum(a){return a.reduce((x,y)=>x+y,0)}function mean(a){return a.length?sum(a)/a.length:0}function parseNums(s){return uniq((String(s).match(/\d+/g)||[]).map(Number)).sort((a,b)=>a-b)}
+function save(){localStorage.setItem("aiLotteryPro5",JSON.stringify(store))}function fmt(n){return String(n).padStart(2,"0")}function uniq(a){return [...new Set(a)]}function sum(a){return a.reduce((x,y)=>x+y,0)}function mean(a){return a.length?sum(a)/a.length:0}function parseNums(s){return uniq((String(s).match(/\d+/g)||[]).map(Number)).sort((a,b)=>a-b)}
 function ac(a){const d=new Set;for(let i=0;i<a.length;i++)for(let j=i+1;j<a.length;j++)d.add(a[j]-a[i]);return Math.max(0,d.size-(a.length-1))}function consecutive(a){let c=0;for(let i=1;i<a.length;i++)if(a[i]===a[i-1]+1)c++;return c}function overlap(a,b){return a.filter(x=>b.includes(x)).length}
-async function boot(){try{const [a,b]=await Promise.all([fetch('loto6-history.json?v=400').then(r=>r.json()),fetch('loto7-history.json?v=400').then(r=>r.json())]);history.loto6=a;history.loto7=b}catch(e){console.error(e)}for(const g of ['loto6','loto7']){const m=store.manual?.[g];if(m?.verified)mergeLatest(g,m)}bind();render();refreshOfficial(true)}
-function bind(){ $$('.game-switch button').forEach(b=>b.onclick=()=>{game=b.dataset.game;$$('.game-switch button').forEach(x=>x.classList.toggle('active',x===b));render()}); $$('#nav button').forEach(b=>b.onclick=()=>{$$('#nav button').forEach(x=>x.classList.toggle('active',x===b));$$('.tab').forEach(x=>x.classList.toggle('active',x.id===b.dataset.tab));render()}); $('#themeBtn').onclick=()=>document.body.classList.toggle('dark');$('#refreshLatest').onclick=()=>refreshOfficial(false);$('#generate').onclick=generate;$('#savePurchase').onclick=savePurchase;$('#verifyLatest').onclick=verifyLatest;$('#saveManual').onclick=saveManual;$('#exportPrediction').onclick=exportPrediction;$('#exportReport').onclick=exportReport}
+async function boot(){
+  try{
+    const [a,b,l]=await Promise.all([
+      fetch('loto6-history.json?v=500').then(r=>{if(!r.ok)throw new Error('loto6履歴 HTTP '+r.status);return r.json()}),
+      fetch('loto7-history.json?v=500').then(r=>{if(!r.ok)throw new Error('loto7履歴 HTTP '+r.status);return r.json()}),
+      fetch('latest.json?t='+Date.now(),{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('latest.json HTTP '+r.status);return r.json()})
+    ]);
+    history.loto6=validateHistory(a,'loto6'); history.loto7=validateHistory(b,'loto7');
+    for(const g of ['loto6','loto7']) if(l?.[g]?.verified) mergeLatest(g,l[g]);
+  }catch(e){ console.error(e); window.__bootError=String(e?.message||e); }
+  for(const g of ['loto6','loto7']){const m=store.manual?.[g];if(m?.verified)mergeLatest(g,m)}
+  bind();render();refreshLatestFile(true)
+}
+function validateHistory(arr,g){
+  const c=CFG[g]; if(!Array.isArray(arr))return [];
+  const map=new Map();
+  for(const d of arr){
+    const nums=uniq((d?.nums||[]).map(Number)).sort((a,b)=>a-b), bonus=uniq((d?.bonus||[]).map(Number)).sort((a,b)=>a-b), no=Number(d?.no);
+    if(Number.isInteger(no)&&nums.length===c.pick&&bonus.length===c.bonus&&[...nums,...bonus].every(n=>n>=1&&n<=c.max)&&!nums.some(n=>bonus.includes(n))) map.set(no,{...d,no,nums,bonus});
+  }
+  return [...map.values()].sort((a,b)=>a.no-b.no)
+}
+function bind(){ $$('.game-switch button').forEach(b=>b.onclick=()=>{game=b.dataset.game;$$('.game-switch button').forEach(x=>x.classList.toggle('active',x===b));render()}); $$('#nav button').forEach(b=>b.onclick=()=>{$$('#nav button').forEach(x=>x.classList.toggle('active',x===b));$$('.tab').forEach(x=>x.classList.toggle('active',x.id===b.dataset.tab));render()}); $('#themeBtn').onclick=()=>document.body.classList.toggle('dark');$('#refreshLatest').onclick=()=>refreshLatestFile(false);$('#generate').onclick=generate;$('#savePurchase').onclick=savePurchase;$('#verifyLatest').onclick=verifyLatest;$('#saveManual').onclick=saveManual;$('#exportPrediction').onclick=exportPrediction;$('#exportReport').onclick=exportReport}
 function mergeLatest(g,d){if(!d||!d.verified)return;const c=CFG[g];if(d.nums?.length!==c.pick||d.bonus?.length!==c.bonus)return;latest[g]=d;const arr=history[g],i=arr.findIndex(x=>+x.no===+d.no);if(i>=0)arr[i]=d;else arr.push(d);arr.sort((a,b)=>a.no-b.no)}
-async function refreshOfficial(silent){$('#fetchStatus').textContent='公式結果を確認中…';try{const r=await fetch(`/api/latest?game=${game}&t=${Date.now()}`,{cache:'no-store'});const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error||`HTTP ${r.status}`);mergeLatest(game,j.draw);$('#fetchStatus').textContent=`公式確認済み：${j.source}｜${new Date(j.checkedAt).toLocaleString('ja-JP')}`;autoVerify()}catch(e){$('#fetchStatus').textContent=`自動取得失敗：${e.message}。公式確認済みの手動登録を利用できます。`;if(!silent)alert('公式結果を取得できませんでした。誤データで判定は行いません。')}render()}
+async function refreshLatestFile(silent){
+  $('#fetchStatus').textContent='同期済み結果を確認中…';
+  try{
+    const r=await fetch(`latest.json?t=${Date.now()}`,{cache:'no-store'}); const j=await r.json();
+    if(!r.ok)throw new Error(`HTTP ${r.status}`);
+    const d=j?.[game]; if(!d?.verified)throw new Error('公式確認済みデータは未登録です');
+    mergeLatest(game,d);
+    $('#fetchStatus').textContent=`同期確認済み：${d.source||'GitHub Actions'}｜${d.checkedAt?new Date(d.checkedAt).toLocaleString('ja-JP'):''}`;
+    autoVerify();
+  }catch(e){
+    $('#fetchStatus').textContent=`同期データ未確認：${e.message}。公式サイト照合済みの手動登録を利用できます。`;
+    if(!silent)alert('公式確認済みの同期データを取得できませんでした。未確認データでは当せん判定しません。');
+  }
+  render()
+}
 function render(){renderHome();renderPrediction();renderPurchases();renderAnalysis()}
 function renderHome(){const h=H(),l=L(),p=store.purchases[game]||[];$('#statusCards').innerHTML=`<div class=stat><b>${h.length}</b><span>履歴回数</span></div><div class=stat><b>${h.at(-1)?.no||'-'}</b><span>最新収録回</span></div><div class=stat><b>${p.length}</b><span>購入履歴</span></div><div class=stat><b>${VERSION}</b><span>統合版</span></div>`;$('#latestBox').innerHTML=l?`<b>第${l.no}回　${l.date||''}</b><div class=balls>${l.nums.map(n=>`<i class=ball>${fmt(n)}</i>`).join('')}${l.bonus.map(n=>`<i class="ball bonus">${fmt(n)}</i>`).join('')}</div><p class=muted>取得元：${l.source||'公式確認済み手動登録'}</p>`:'<p>公式確認済みの最新結果はまだ取得されていません。</p>'}
 function frequencies(win){const a=H().slice(-win),m=Array(C().max+1).fill(0);a.forEach(d=>d.nums.forEach(n=>m[n]++));return m}function gaps(){const h=H(),g=Array(C().max+1).fill(h.length);for(let n=1;n<=C().max;n++){for(let i=h.length-1;i>=0;i--)if(h[i].nums.includes(n)){g[n]=h.length-1-i;break}}return g}function pairMap(win=100){const m=new Map;H().slice(-win).forEach(d=>{for(let i=0;i<d.nums.length;i++)for(let j=i+1;j<d.nums.length;j++){const k=`${d.nums[i]}-${d.nums[j]}`;m.set(k,(m.get(k)||0)+1)}});return m}
