@@ -1,9 +1,0 @@
-GitHub Actions 設定用
-
-1. GitHubの ai-lottery-lab を開く
-2. Actions タブを押す
-3. set up a workflow yourself を押す
-4. ファイル名を sync-lottery.yml にする
-5. 下記 workflow の内容を貼り付けて Commit changes
-
-※この版のアプリ本体は latest.json を読み込みます。自動同期workflowは次の設定段階で追加します。
