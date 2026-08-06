@@ -1,0 +1,9 @@
+AI Lottery Lab Professional 5.0.2
+
+このZIPはGitHubリポジトリ完全版です。
+ルートファイルに加え、次のフォルダも必要です。
+- scripts/sync-lottery.mjs
+- .github/workflows/sync-lottery.yml
+- tests/
+
+GitHub Actionsが登録済みのリポジトリへは、同名ファイルを上書きしてください。
