@@ -1,0 +1,75 @@
+"use strict";
+const VERSION="5.0.2",CFG={loto6:{name:"ロト6",max:43,pick:6,bonus:1,file:"loto6-history.json"},loto7:{name:"ロト7",max:37,pick:7,bonus:2,file:"loto7-history.json"}};
+let game="loto6",history={loto6:[],loto7:[]},latest={loto6:null,loto7:null},predictions={loto6:null,loto7:null};
+const EMPTY_STORE={purchases:{loto6:[],loto7:[]},reports:{loto6:[],loto7:[]},manual:{}};
+let store;
+try{
+  store=JSON.parse(localStorage.getItem("aiLotteryPro5")||localStorage.getItem("aiLotteryPro4")||JSON.stringify(EMPTY_STORE));
+}catch{store=structuredClone?structuredClone(EMPTY_STORE):JSON.parse(JSON.stringify(EMPTY_STORE));}
+store.purchases ||= {loto6:[],loto7:[]}; store.reports ||= {loto6:[],loto7:[]}; store.manual ||= {};
+store.purchases.loto6 ||= []; store.purchases.loto7 ||= []; store.reports.loto6 ||= []; store.reports.loto7 ||= [];
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)], C=()=>CFG[game], H=()=>history[game], L=()=>latest[game];
+function save(){localStorage.setItem("aiLotteryPro5",JSON.stringify(store))}function fmt(n){return String(n).padStart(2,"0")}function uniq(a){return [...new Set(a)]}function sum(a){return a.reduce((x,y)=>x+y,0)}function mean(a){return a.length?sum(a)/a.length:0}function parseNums(s){return uniq((String(s).match(/\d+/g)||[]).map(Number)).sort((a,b)=>a-b)}
+function ac(a){const d=new Set;for(let i=0;i<a.length;i++)for(let j=i+1;j<a.length;j++)d.add(a[j]-a[i]);return Math.max(0,d.size-(a.length-1))}function consecutive(a){let c=0;for(let i=1;i<a.length;i++)if(a[i]===a[i-1]+1)c++;return c}function overlap(a,b){return a.filter(x=>b.includes(x)).length}
+async function boot(){
+  try{
+    const [a,b,l]=await Promise.all([
+      fetch('loto6-history.json?v=500').then(r=>{if(!r.ok)throw new Error('loto6履歴 HTTP '+r.status);return r.json()}),
+      fetch('loto7-history.json?v=500').then(r=>{if(!r.ok)throw new Error('loto7履歴 HTTP '+r.status);return r.json()}),
+      fetch('latest.json?t='+Date.now(),{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('latest.json HTTP '+r.status);return r.json()})
+    ]);
+    history.loto6=validateHistory(a,'loto6'); history.loto7=validateHistory(b,'loto7');
+    for(const g of ['loto6','loto7']) if(l?.[g]?.verified) mergeLatest(g,l[g]);
+  }catch(e){ console.error(e); window.__bootError=String(e?.message||e); }
+  for(const g of ['loto6','loto7']){const m=store.manual?.[g];if(m?.verified)mergeLatest(g,m)}
+  bind();render();refreshLatestFile(true)
+}
+function validateHistory(arr,g){
+  const c=CFG[g]; if(!Array.isArray(arr))return [];
+  const map=new Map();
+  for(const d of arr){
+    const nums=uniq((d?.nums||[]).map(Number)).sort((a,b)=>a-b), bonus=uniq((d?.bonus||[]).map(Number)).sort((a,b)=>a-b), no=Number(d?.no);
+    if(Number.isInteger(no)&&nums.length===c.pick&&bonus.length===c.bonus&&[...nums,...bonus].every(n=>n>=1&&n<=c.max)&&!nums.some(n=>bonus.includes(n))) map.set(no,{...d,no,nums,bonus});
+  }
+  return [...map.values()].sort((a,b)=>a.no-b.no)
+}
+function bind(){ $$('.game-switch button').forEach(b=>b.onclick=()=>{game=b.dataset.game;$$('.game-switch button').forEach(x=>x.classList.toggle('active',x===b));render()}); $$('#nav button').forEach(b=>b.onclick=()=>{$$('#nav button').forEach(x=>x.classList.toggle('active',x===b));$$('.tab').forEach(x=>x.classList.toggle('active',x.id===b.dataset.tab));render()}); $('#themeBtn').onclick=()=>document.body.classList.toggle('dark');$('#refreshLatest').onclick=()=>refreshLatestFile(false);$('#generate').onclick=generate;$('#savePurchase').onclick=savePurchase;$('#verifyLatest').onclick=verifyLatest;$('#saveManual').onclick=saveManual;$('#exportPrediction').onclick=exportPrediction;$('#exportReport').onclick=exportReport}
+function mergeLatest(g,d){if(!d||!d.verified)return;const c=CFG[g];if(d.nums?.length!==c.pick||d.bonus?.length!==c.bonus)return;latest[g]=d;const arr=history[g],i=arr.findIndex(x=>+x.no===+d.no);if(i>=0)arr[i]=d;else arr.push(d);arr.sort((a,b)=>a.no-b.no)}
+async function refreshLatestFile(silent){
+  $('#fetchStatus').textContent='同期済み結果を確認中…';
+  try{
+    const r=await fetch(`latest.json?t=${Date.now()}`,{cache:'no-store'}); const j=await r.json();
+    if(!r.ok)throw new Error(`HTTP ${r.status}`);
+    const d=j?.[game]; if(!d?.verified)throw new Error('公式確認済みデータは未登録です');
+    mergeLatest(game,d);
+    $('#fetchStatus').textContent=`同期確認済み：${d.source||'GitHub Actions'}｜${d.checkedAt?new Date(d.checkedAt).toLocaleString('ja-JP'):''}`;
+    autoVerify();
+  }catch(e){
+    $('#fetchStatus').textContent=`同期データ未確認：${e.message}。公式サイト照合済みの手動登録を利用できます。`;
+    if(!silent)alert('公式確認済みの同期データを取得できませんでした。未確認データでは当せん判定しません。');
+  }
+  render()
+}
+function render(){renderHome();renderPrediction();renderPurchases();renderAnalysis()}
+function renderHome(){const h=H(),l=L(),p=store.purchases[game]||[];$('#statusCards').innerHTML=`<div class=stat><b>${h.length}</b><span>履歴回数</span></div><div class=stat><b>${h.at(-1)?.no||'-'}</b><span>最新収録回</span></div><div class=stat><b>${p.length}</b><span>購入履歴</span></div><div class=stat><b>${VERSION}</b><span>統合版</span></div>`;$('#latestBox').innerHTML=l?`<b>第${l.no}回　${l.date||''}</b><div class=balls>${l.nums.map(n=>`<i class=ball>${fmt(n)}</i>`).join('')}${l.bonus.map(n=>`<i class="ball bonus">${fmt(n)}</i>`).join('')}</div><p class=muted>取得元：${l.source||'公式確認済み手動登録'}</p>`:'<p>公式確認済みの最新結果はまだ取得されていません。</p>'}
+function frequencies(win){const a=H().slice(-win),m=Array(C().max+1).fill(0);a.forEach(d=>d.nums.forEach(n=>m[n]++));return m}function gaps(){const h=H(),g=Array(C().max+1).fill(h.length);for(let n=1;n<=C().max;n++){for(let i=h.length-1;i>=0;i--)if(h[i].nums.includes(n)){g[n]=h.length-1-i;break}}return g}function pairMap(win=100){const m=new Map;H().slice(-win).forEach(d=>{for(let i=0;i<d.nums.length;i++)for(let j=i+1;j<d.nums.length;j++){const k=`${d.nums[i]}-${d.nums[j]}`;m.set(k,(m.get(k)||0)+1)}});return m}
+function numberScores(){const c=C(),wins=[10,30,50,100],fs=wins.map(frequencies),gp=gaps(),last=H().at(-1)||{nums:[],bonus:[]};const slide=new Set(last.nums.flatMap(n=>[n-1,n+1]).filter(n=>n>=1&&n<=c.max)),ba=new Set(last.bonus.flatMap(n=>[n-1,n+1]).filter(n=>n>=1&&n<=c.max));let s=[];for(let n=1;n<=c.max;n++){let v=0;fs.forEach((f,i)=>v+=(f[n]/Math.max(1,Math.min(wins[i],H().length)))*[3.2,2.6,1.8,1.2][i]);v+=Math.min(gp[n],18)*.025; if(last.nums.includes(n))v+=.18;if(slide.has(n))v+=.42;if(ba.has(n))v+=.12;s.push({n,raw:v,gap:gp[n],hot:fs[1][n]})}const mn=Math.min(...s.map(x=>x.raw)),mx=Math.max(...s.map(x=>x.raw));s.forEach(x=>x.score=Math.round(50+50*(x.raw-mn)/(mx-mn||1)));return s.sort((a,b)=>b.raw-a.raw)}
+function weightedPick(pool,k){let a=[...pool],out=[];while(out.length<k&&a.length){const total=sum(a.map(x=>Math.max(.01,x.raw))),r=Math.random()*total;let z=0,idx=0;for(;idx<a.length;idx++){z+=Math.max(.01,a[idx].raw);if(z>=r)break}out.push(a.splice(Math.min(idx,a.length-1),1)[0].n)}return out.sort((x,y)=>x-y)}
+function setFeatures(a){const last=H().at(-1)||{nums:[],bonus:[]},slide=new Set(last.nums.flatMap(n=>[n-1,n+1])),ba=new Set(last.bonus.flatMap(n=>[n-1,n+1]));return{repeat:overlap(a,last.nums),slide:a.filter(n=>slide.has(n)).length,bonusAdj:a.filter(n=>ba.has(n)).length,odd:a.filter(n=>n%2).length,total:sum(a),ac:ac(a),cons:consecutive(a),range:a.at(-1)-a[0]}}
+function structuralScore(a,targetRepeat=null){const f=setFeatures(a),p=C().pick;let s=0;s-=Math.abs(f.odd-p/2)*1.5;const avg=C().max*p/2;s-=Math.abs(f.total-avg)/18;s+=Math.min(f.ac,10)*.25;s-=Math.max(0,f.cons-1)*2;s+=Math.min(f.slide,2)*.6;s+=Math.min(f.bonusAdj,1)*.2;if(targetRepeat!==null)s-=Math.abs(f.repeat-targetRepeat)*2.2;if(f.range<Math.round(C().max*.5))s-=1.2;return s}
+function generate(){if(H().length<30)return alert('履歴データが不足しています');const scores=numberScores(),pool=scores.slice(0,game==='loto6'?32:30),targets=game==='loto6'?[0,0,1,1,2]:[0,1,1,2,2],pairs=pairMap(),candidates=[];for(let i=0;i<25000;i++){const a=weightedPick(pool,C().pick),f=setFeatures(a);let sc=sum(a.map(n=>scores.find(x=>x.n===n).raw))+structuralScore(a);for(let x=0;x<a.length;x++)for(let y=x+1;y<a.length;y++)sc+=Math.min(3,pairs.get(`${a[x]}-${a[y]}`)||0)*.035;candidates.push({a,f,sc})}candidates.sort((x,y)=>y.sc-x.sc);const chosen=[];for(const t of targets){let best=candidates.find(x=>x.f.repeat===t&&chosen.every(y=>overlap(x.a,y.a)<=2));if(!best)best=candidates.find(x=>chosen.every(y=>overlap(x.a,y.a)<=3));if(best){chosen.push(best);candidates.splice(candidates.indexOf(best),1)}}predictions[game]={drawNo:(L()?.no||H().at(-1)?.no||0)+1,createdAt:new Date().toISOString(),sets:chosen};renderPrediction();renderAnalysis()}
+function renderPrediction(){const p=predictions[game],scores=numberScores();$('#scoreboard').innerHTML=scores.map((x,i)=>`<div class=score><b>${fmt(x.n)}</b> ${x.score}点<br><small>${i<Math.ceil(C().max*.25)?'HOT':x.gap>=15?'COLD':'標準'}・間隔${x.gap}</small></div>`).join('');if(!p){$('#predictionMeta').innerHTML='';$('#setsBox').innerHTML='<p class=muted>「次回5口を生成」を押してください。</p>';return}$('#predictionMeta').innerHTML=`<p><b>対象：第${p.drawNo}回</b>　生成：${new Date(p.createdAt).toLocaleString('ja-JP')}</p>`;$('#setsBox').innerHTML=p.sets.map((x,i)=>`<div class=set><h4>第${i+1}口</h4><div class=balls>${x.a.map(n=>`<i class=ball>${fmt(n)}</i>`).join('')}</div><div class=meta>前回重複${x.f.repeat}｜±1 ${x.f.slide}｜B隣接${x.f.bonusAdj}｜偶奇${x.f.odd}:${C().pick-x.f.odd}｜合計${x.f.total}｜AC${x.f.ac}</div></div>`).join('')}
+function savePurchase(){const p=predictions[game];if(!p?.sets?.length)return alert('先に5口を生成してください');const rec={id:crypto.randomUUID?.()||String(Date.now()),drawNo:p.drawNo,createdAt:new Date().toISOString(),sets:p.sets.map(x=>x.a)};store.purchases[game].unshift(rec);save();renderPurchases();alert(`第${p.drawNo}回の購入5口として保存しました`)}
+function renderPurchases(){const a=store.purchases[game]||[];$('#purchaseList').innerHTML=a.length?a.map(x=>`<div class=set><b>第${x.drawNo}回</b><small> ${new Date(x.createdAt).toLocaleString('ja-JP')}</small>${x.sets.map((s,i)=>`<div>${i+1}. ${s.map(fmt).join('・')}</div>`).join('')}<button onclick="deletePurchase('${x.id}')">削除</button></div>`).join(''):'<p>購入履歴はありません。</p>'}window.deletePurchase=id=>{store.purchases[game]=store.purchases[game].filter(x=>x.id!==id);save();renderPurchases()}
+function grade(g,m,b){if(g==='loto6'){if(m===6)return'1等';if(m===5&&b>=1)return'2等';if(m===5)return'3等';if(m===4)return'4等';if(m===3)return'5等';return'当せんなし'}if(m===7)return'1等';if(m===6&&b>=1)return'2等';if(m===6)return'3等';if(m===5)return'4等';if(m===4)return'5等';if(m===3&&b>=1)return'6等';return'当せんなし'}
+function verifyLatest(){const l=L();if(!l?.verified)return alert('公式確認済みの最新結果がありません');const p=(store.purchases[game]||[]).find(x=>+x.drawNo===+l.no);if(!p)return alert(`第${l.no}回の購入5口が保存されていません`);const rows=p.sets.map((s,i)=>{const m=overlap(s,l.nums),b=overlap(s,l.bonus),gr=grade(game,m,b);return{set:i+1,nums:s,match:m,bonus:b,grade:gr}});const report=makeReport(l,p,rows);store.reports[game]=store.reports[game].filter(x=>+x.no!==+l.no);store.reports[game].unshift(report);save();renderVerify(report);renderAnalysis()}
+function autoVerify(){const l=L();if(l?.verified&&(store.purchases[game]||[]).some(x=>+x.drawNo===+l.no)&&!(store.reports[game]||[]).some(x=>+x.no===+l.no))verifyLatest()}
+function makeReport(l,p,rows){const prev=H().find(x=>+x.no===+l.no-1)||H().slice(-2)[0]||{nums:[],bonus:[]},slide=new Set(prev.nums.flatMap(n=>[n-1,n+1])),ba=new Set(prev.bonus.flatMap(n=>[n-1,n+1]));const f={repeat:overlap(l.nums,prev.nums),slide:l.nums.filter(n=>slide.has(n)).length,bonusAdj:l.nums.filter(n=>ba.has(n)).length,odd:l.nums.filter(n=>n%2).length,total:sum(l.nums),ac:ac(l.nums),range:l.nums.at(-1)-l.nums[0],cons:consecutive(l.nums)};return{no:l.no,date:l.date,winning:l.nums,bonus:l.bonus,rows,features:f,highest:Math.max(...rows.map(x=>x.match)),createdAt:new Date().toISOString()}}
+function renderVerify(r){if(!r){$('#verifyResult').innerHTML='';return}$('#verifyResult').innerHTML=`<h3>第${r.no}回　最高${r.highest}個一致</h3>${r.rows.map(x=>`<div class="result-row ${x.grade!=='当せんなし'?'hit':''}"><b>第${x.set}口：${x.match}個一致 ${x.bonus?'＋B'+x.bonus:''}｜${x.grade}</b><br>${x.nums.map(fmt).join('・')}</div>`).join('')}`}
+function saveManual(){const no=+$('#manualNo').value,date=$('#manualDate').value,nums=parseNums($('#manualNums').value),bonus=parseNums($('#manualBonus').value),ok=$('#manualConfirmed').checked;if(!ok)return alert('公式サイトで照合済みにチェックしてください');if(!no||nums.length!==C().pick||bonus.length!==C().bonus||[...nums,...bonus].some(n=>n<1||n>C().max)||overlap(nums,bonus))return alert('回号・数字・重複を確認してください');const d={no,date,nums,bonus,verified:true,source:'公式確認済み手動登録'};store.manual[game]=d;save();mergeLatest(game,d);render();autoVerify()}
+const featureInfo={repeat:['前回重複','0～2個を5口へ分散'],slide:['±1スライド','主要特徴・ただし過大評価しない'],bonusAdj:['ボーナス隣接','補助特徴'],odd:['偶奇','ソフト評価'],total:['合計値','固定足切りではなく中心からの距離'],ac:['AC値','構造確認'],range:['高低幅','狭すぎる集中を減点'],cons:['連番','0～1組を基本']};
+function renderAnalysis(){const r=(store.reports[game]||[])[0];$('#logicList').innerHTML=Object.entries(featureInfo).map(([k,v])=>`<div class=feature><b>${v[0]}</b><span>採用</span><span>${v[1]}</span></div>`).join('');if(!r){$('#report').innerHTML='<p>抽選結果との照合後にレポートを表示します。</p>';return}const f=r.features;const evals=[['前回重複',f.repeat, f.repeat<=2?'維持':'重みを下げる'],['±1スライド',f.slide,f.slide>=1?'有効':'補助へ'],['B隣接',f.bonusAdj,f.bonusAdj>=1?'一部有効':'低評価'],['偶奇',`${f.odd}:${C().pick-f.odd}`,Math.abs(f.odd-C().pick/2)<=1?'標準':'偏り許容'],['合計',f.total,'次回の中心値へ反映'],['AC値',f.ac,'構造確認'],['高低幅',f.range,'分散確認'],['連番',f.cons,'構造確認']];$('#report').innerHTML=`<h3>第${r.no}回検証｜最高${r.highest}個一致</h3><div class=balls>${r.winning.map(n=>`<i class=ball>${fmt(n)}</i>`).join('')}${r.bonus.map(n=>`<i class="ball bonus">${fmt(n)}</i>`).join('')}</div>${evals.map(x=>`<div class=feature><b>${x[0]}</b><span>${x[1]}</span><span>${x[2]}</span></div>`).join('')}<p><b>次回反映：</b>±1は実績に応じて維持、前回重複は0・0・1・1・2分散、偶奇・合計・ACは足切りではなくソフト評価、5口間共通数字2個以下を優先します。</p>`}
+function csvDownload(name,rows){const text='\ufeff'+rows.map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(',')).join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/csv'}));a.download=name;a.click();URL.revokeObjectURL(a.href)}
+function exportPrediction(){const p=predictions[game];if(!p)return alert('予想がありません');csvDownload(`${game}_prediction_${p.drawNo}.csv`,[['対象回','口','組合せ','前回重複','±1','B隣接','合計','偶奇','AC'],...p.sets.map((x,i)=>[p.drawNo,i+1,x.a.map(fmt).join('・'),x.f.repeat,x.f.slide,x.f.bonusAdj,x.f.total,`${x.f.odd}:${C().pick-x.f.odd}`,x.f.ac])])}
+function exportReport(){const r=(store.reports[game]||[])[0];if(!r)return alert('レポートがありません');csvDownload(`${game}_report_${r.no}.csv`,[['回号',r.no],['本数字',r.winning.map(fmt).join('・')],['ボーナス',r.bonus.map(fmt).join('・')],['最高一致',r.highest],[],['口','購入数字','本数字一致','B一致','等級'],...r.rows.map(x=>[x.set,x.nums.map(fmt).join('・'),x.match,x.bonus,x.grade]),[],['特徴量','値'],...Object.entries(r.features)])}
+boot();
