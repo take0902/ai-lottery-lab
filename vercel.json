@@ -1,8 +1,0 @@
-{
-  "version": 2,
-  "headers": [
-    {"source":"/latest.json","headers":[{"key":"Cache-Control","value":"no-store, max-age=0"}]},
-    {"source":"/(.*)","headers":[{"key":"Cache-Control","value":"public, max-age=0, must-revalidate"}]}
-  ],
-  "rewrites": [{"source":"/(.*)","destination":"/index.html"}]
-}
