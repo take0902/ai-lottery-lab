@@ -1,0 +1,7 @@
+iPhone更新手順
+1. ZIPをファイルアプリで展開
+2. GitHubの空リポジトリ ai-lottery-lab を開く
+3. 「uploading an existing file」または Add file → Upload files
+4. 展開フォルダ内の全ファイルを選択してCommit
+5. VercelでAdd New → Project → ai-lottery-labをImport
+6. デプロイ完了後 /api/latest?game=loto6 を開き、ok:trueを確認
