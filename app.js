@@ -1,4 +1,4 @@
-const APP={version:'3.0.0'};
+const APP={version:'3.0.1'};
 const CFG={loto6:{name:'ロト6',max:43,pick:6,bonus:1},loto7:{name:'ロト7',max:37,pick:7,bonus:2}};
 let game='loto6';let latest={loto6:null,loto7:null};let predictions={loto6:[],loto7:[]};
 const state=load();const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
@@ -10,9 +10,24 @@ function validSet(a){return a.length===cfg().pick&&new Set(a).size===a.length&&a
 function balls(draw){if(!draw)return '';return [...draw.nums.map(n=>`<span class="ball">${String(n).padStart(2,'0')}</span>`),...draw.bonus.map(n=>`<span class="ball bonus">${String(n).padStart(2,'0')}</span>`)].join('')}
 function setGame(g){game=g;$$('[data-game]').forEach(b=>b.classList.toggle('active',b.dataset.game===g));$('#gameTitle').textContent=cfg().name;renderAll()}
 function setTab(id){$$('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));$$('.tab').forEach(s=>s.classList.toggle('active',s.id===id))}
-async function refreshOfficial(){const btn=$('#refreshOfficial');btn.disabled=true;btn.textContent='取得中…';$('#apiDiag').style.display='none';try{const r=await fetch(`/api/latest?game=${game}&t=${Date.now()}`,{cache:'no-store'});const text=await r.text();let j;try{j=JSON.parse(text)}catch{throw new Error(`API応答がJSONではありません（HTTP ${r.status}）\n${text.slice(0,300)}`)}if(!r.ok||!j.ok)throw new Error(j.error||`HTTP ${r.status}`);latest[game]=j.draw;localStorage.setItem(`official_${game}`,JSON.stringify(j.draw));renderAll();autoVerify();}catch(e){$('#sourceStatus').textContent='取得失敗';$('#apiDiag').style.display='block';$('#apiDiag').textContent=String(e.message||e)}finally{btn.disabled=false;btn.textContent='公式最新データを取得'}}
+async function refreshOfficial(){
+  const btn=$('#refreshOfficial');
+  btn.disabled=true;btn.textContent='同期データ確認中…';$('#apiDiag').style.display='none';
+  try{
+    const r=await fetch(`/latest.json?t=${Date.now()}`,{cache:'no-store'});
+    if(!r.ok)throw new Error(`latest.json HTTP ${r.status}`);
+    const j=await r.json();
+    const d=j?.[game];
+    if(!d||!d.no||!Array.isArray(d.nums)||!Array.isArray(d.bonus))throw new Error(`${game}の同期データが不正です`);
+    latest[game]={...d,verified:Boolean(d.verified),source:d.source||'GitHub Actions同期'};
+    localStorage.setItem(`official_${game}`,JSON.stringify(latest[game]));
+    renderAll();autoVerify();
+  }catch(e){
+    $('#sourceStatus').textContent='同期失敗';$('#apiDiag').style.display='block';$('#apiDiag').textContent=String(e.message||e);
+  }finally{btn.disabled=false;btn.textContent='最新同期データを確認'}
+}
 function restoreLatest(){for(const g of Object.keys(CFG)){try{latest[g]=JSON.parse(localStorage.getItem(`official_${g}`)||'null')}catch{}}}
-function renderHome(){const d=latest[game];$('#latestNo').textContent=d?`第${d.no}回`:'-';$('#sourceStatus').textContent=d?.verified?'公式確認済み':'未確認';$('#latestBalls').innerHTML=balls(d);$('#latestMeta').textContent=d?`${d.date}｜${d.source||''}`:'公式データを確認してください。';$('#health').innerHTML=`<p class="${d?.verified?'ok':'bad'}">公式データ：${d?.verified?'正常':'未取得'}</p><p>保存購入：${state.purchases[game].length}件</p><p>最新照合レポート：${state.reports[game].length}件</p>`}
+function renderHome(){const d=latest[game];$('#latestNo').textContent=d?`第${d.no}回`:'-';$('#sourceStatus').textContent=d?.verified?'公式確認済み':'未確認';$('#latestBalls').innerHTML=balls(d);$('#latestMeta').textContent=d?`${d.date}｜${d.source||''}`:'同期データを確認してください。';$('#health').innerHTML=`<p class="${d?.verified?'ok':'bad'}">公式データ：${d?.verified?'正常':'未取得'}</p><p>保存購入：${state.purchases[game].length}件</p><p>最新照合レポート：${state.reports[game].length}件</p>`}
 function scoreNumbers(){const c=cfg(),d=latest[game],scores=[];for(let n=1;n<=c.max;n++){let s=Math.random()*0.3;if(d){if(d.nums.includes(n))s+=.7;if(d.nums.some(x=>Math.abs(x-n)===1))s+=1.2;if(d.bonus.some(x=>Math.abs(x-n)===1))s+=.4}scores.push({n,s})}return scores.sort((a,b)=>b.s-a.s)}
 function ac(a){const dif=new Set();for(let i=0;i<a.length;i++)for(let j=i+1;j<a.length;j++)dif.add(a[j]-a[i]);return dif.size-(a.length-1)}
 function generate(){const c=cfg(),rank=scoreNumbers().map(x=>x.n),sets=[];for(let k=0;k<5;k++){let pool=[...rank],set=[];while(set.length<c.pick&&pool.length){const span=Math.min(pool.length,Math.max(8,18-k*2));const i=Math.floor(Math.random()*span);set.push(pool.splice(i,1)[0])}set.sort((a,b)=>a-b);if(!sets.some(x=>x.join()==set.join()))sets.push(set);else k--}predictions[game]=sets;renderPredictions()}
@@ -22,7 +37,7 @@ function renderPurchases(){const list=state.purchases[game];$('#purchaseHistory'
 function rank(main,bonus){if(game==='loto6'){if(main===6)return'1等';if(main===5&&bonus)return'2等';if(main===5)return'3等';if(main===4)return'4等';if(main===3)return'5等';return'はずれ'}if(main===7)return'1等';if(main===6&&bonus)return'2等';if(main===6)return'3等';if(main===5)return'4等';if(main===4)return'5等';if(main===3&&bonus)return'6等';return'はずれ'}
 function verifyPurchase(p,d){return p.sets.map((a,i)=>{const main=a.filter(n=>d.nums.includes(n)).length;const bonus=a.filter(n=>d.bonus.includes(n)).length;return{口:i+1,set:a,main,bonus,rank:rank(main,bonus)}})}
 function autoVerify(){const d=latest[game];if(!d?.verified)return;const p=state.purchases[game].find(x=>Number(x.drawNo)===Number(d.no));if(!p)return;const rows=verifyPurchase(p,d);const report={drawNo:d.no,date:new Date().toISOString(),rows,winning:d};state.reports[game]=state.reports[game].filter(x=>x.drawNo!==d.no);state.reports[game].unshift(report);save();renderVerify();renderReport()}
-function runVerify(){const d=latest[game];if(!d?.verified)return alert('先に公式最新データを取得してください');const p=state.purchases[game].find(x=>Number(x.drawNo)===Number(d.no));if(!p)return alert(`第${d.no}回の購入5口がありません`);autoVerify()}
+function runVerify(){const d=latest[game];if(!d?.verified)return alert('先に最新同期データを確認してください');const p=state.purchases[game].find(x=>Number(x.drawNo)===Number(d.no));if(!p)return alert(`第${d.no}回の購入5口がありません`);autoVerify()}
 function renderVerify(){const r=state.reports[game][0];if(!r){$('#verifyResult').innerHTML='<p class="muted">照合履歴なし</p>';return}$('#verifyResult').innerHTML=`<h3>第${r.drawNo}回</h3>${r.rows.map(x=>`<div class="result-card ${x.rank!=='はずれ'?'win':''}"><b>第${x.口}口：${x.rank}</b><p>${x.set.map(n=>String(n).padStart(2,'0')).join('・')}</p><small>本数字 ${x.main}個｜ボーナス ${x.bonus}個</small></div>`).join('')}`}
 function renderReport(){const r=state.reports[game][0];if(!r){$('#reportBody').innerHTML='<p class="muted">照合後に表示します。</p>';return}const d=r.winning,prev=null,odd=d.nums.filter(n=>n%2).length,sum=d.nums.reduce((a,b)=>a+b,0);const slide=prev?d.nums.filter(n=>prev.nums.some(x=>Math.abs(x-n)===1)).length:'-';$('#reportBody').innerHTML=`<table><tr><th>項目</th><th>結果</th></tr><tr><td>最高一致</td><td>${Math.max(...r.rows.map(x=>x.main))}個</td></tr><tr><td>偶奇</td><td>${odd}:${d.nums.length-odd}</td></tr><tr><td>合計値</td><td>${sum}</td></tr><tr><td>AC値</td><td>${ac(d.nums)}</td></tr><tr><td>±1スライド</td><td>${slide}</td></tr></table><p class="muted">前回重複・±1・ボーナス隣接は前回公式データを蓄積後に自動評価します。</p>`}
 function renderAll(){renderHome();renderPredictions();renderPurchases();renderVerify();renderReport();const d=latest[game];$('#purchaseNo').value=d?Number(d.no)+1:''}
