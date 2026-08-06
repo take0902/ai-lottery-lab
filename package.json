@@ -1,10 +1,10 @@
 {
   "name": "ai-lottery-lab-professional",
-  "version": "5.0.0",
+  "version": "5.0.1",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/core.test.mjs",
+    "test": "node tests/core.test.mjs && node tests/rakuten-parser.test.mjs",
     "sync": "node scripts/sync-lottery.mjs"
   }
 }

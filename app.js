@@ -1,5 +1,5 @@
 "use strict";
-const VERSION="5.0.0",CFG={loto6:{name:"ロト6",max:43,pick:6,bonus:1,file:"loto6-history.json"},loto7:{name:"ロト7",max:37,pick:7,bonus:2,file:"loto7-history.json"}};
+const VERSION="5.0.1",CFG={loto6:{name:"ロト6",max:43,pick:6,bonus:1,file:"loto6-history.json"},loto7:{name:"ロト7",max:37,pick:7,bonus:2,file:"loto7-history.json"}};
 let game="loto6",history={loto6:[],loto7:[]},latest={loto6:null,loto7:null},predictions={loto6:null,loto7:null};
 const EMPTY_STORE={purchases:{loto6:[],loto7:[]},reports:{loto6:[],loto7:[]},manual:{}};
 let store;
